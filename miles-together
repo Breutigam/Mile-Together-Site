@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Miles Together</title>
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-firestore-compat.js"></script>
+  <style>
+    optgroup { font-weight: bold; color: #4b5563; }
+    optgroup option { font-weight: normal; color: #111827; }
+    #journey-progress { transition: stroke-dasharray 0.5s ease; }
+    #journey-marker { transition: all 0.5s ease; }
+    .hidden { display: none; }
+    
+    /* Team search results animation */
+    #search-results {
+      transition: all 0.3s ease;
+    }
+    
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+      header .flex {
+        flex-direction: column;
+        gap: 8px;
+        align-items: flex-end;
+      }
+      
+      .grid-cols-2 {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+  <header class="flex items-center justify-between p-4 bg-white shadow-sm">
+    <span class="text-lg font-semibold">🏃‍♀️ Miles Together</span>
+    
+    <!-- Login Form -->
+    <div class="flex items-center gap-2">
+      <input 
+        type="email" 
+        id="auth-email" 
+        placeholder="Email" 
+        class="border p-2 rounded text-sm w-40"
+      >
+      <input 
+        type="password" 
+        id="auth-password" 
+        placeholder="Password" 
+        class="border p-2 rounded text-sm w-40"
+      >
+      <button 
+        onclick="handleAuth()" 
+        class="bg-emerald-500 text-white p-2 rounded text-sm"
+      >
+        Login
+      </button>
+      <button 
+        onclick="switchAuthMode()" 
+        id="auth-switch" 
+        class="text-sm text-emerald-600 underline"
+      >
+        Create account
+      </button>
+    </div>
+  </header>
+
+  <main class="max-w-4xl mx-auto p-4">
+    <!-- Distance Card -->
+    <section class="bg-white shadow rounded-lg p-6">
+      <h2 class="text-lg font-semibold flex items-center gap-2">
+        <span>📍</span> Cumulative Distance
+      </h2>
+      <p class="text-sm text-gray-500 mb-4">Track your total distance covered.</p>
+
+      <div class="mb-4">
+        <label for="journey-select" class="block text-sm font-medium mb-1">Choose Your Journey</label>
+        <select id="journey-select" class="border border-gray-300 p-2 rounded w-full focus:ring-2 focus:ring-emerald-500">
+          <option value="city">City to City</option>
+          <option value="fellowship">The Fellowship of the Ring (1987 km)</option>
+          <option value="forestgump">Forest Gump (24,140 km)</option>
+          <option value="world">Around the World (40,075 km)</option>
+          <option value="moon">To the Moon (384,400 km)</option>
+          <option value="pct">Pacific Crest Trail (4,265 km)</option>
+        </select>
+      </div>
+
+      <p id="journey-distance-display" class="text-sm text-gray-700 mb-2">Distance to Journey's End: 0 km (0%)</p>
+
+      <div class="flex items-center gap-2 my-4">
+        <input 
+          id="distance-input" 
+          type="number" 
+          placeholder="Enter distance" 
+          class="border border-gray-300 p-2 rounded w-full focus:ring-2 focus:ring-emerald-500" 
+        />
+        <select id="distance-unit" class="border border-gray-300 p-2 rounded">
+          <option value="km">km</option>
+          <option value="mi">mi</option>
+        </select>
+      </div>
+
+      <!-- Custom City Pair -->
+      <div id="city-pair-section">
+        <label class="text-sm text-gray-600">Custom City Pair:</label>
+        <div class="flex items-center gap-2 my-3">
+          <select id="city-start" class="border border-gray-300 p-2 rounded w-full">
+            <optgroup label="Canada">
+              <option value="Vancouver">Vancouver, BC</option>
+              <option value="Victoria">Victoria, BC</option>
+              <option value="Edmonton">Edmonton, AB</option>
+              <option value="Calgary">Calgary, AB</option>
+              <option value="Regina">Regina, SK</option>
+              <option value="Winnipeg">Winnipeg, MB</option>
+              <option value="Toronto">Toronto, ON</option>
+              <option value="Ottawa">Ottawa, ON</option>
+              <option value="Montreal">Montréal, QC</option>
+              <option value="Quebec City">Québec City, QC</option>
+              <option value="Fredericton">Fredericton, NB</option>
+              <option value="Halifax">Halifax, NS</option>
+              <option value="Charlottetown">Charlottetown, PE</option>
+              <option value="St. John's">St. John's, NL</option>
+            </optgroup>
+            <optgroup label="United States">
+              <option value="New York">New York, NY</option>
+              <option value="Los Angeles">Los Angeles, CA</option>
+              <option value="Chicago">Chicago, IL</option>
+              <option value="Houston">Houston, TX</option>
+              <option value="Seattle">Seattle, WA</option>
+            </optgroup>
+            <optgroup label="Landmarks">
+              <option value="Eiffel Tower">Eiffel Tower, France</option>
+              <option value="Statue of Liberty">Statue of Liberty, USA</option>
+              <option value="CN Tower">CN Tower, Canada</option>
+            </optgroup>
+          </select>
+          <span>to</span>
+          <select id="city-end" class="border border-gray-300 p-2 rounded w-full">
+            <optgroup label="Canada">
+              <option value="St. John's">St. John's, NL</option>
+              <option value="Halifax">Halifax, NS</option>
+              <option value="Charlottetown">Charlottetown, PE</option>
+              <option value="Fredericton">Fredericton, NB</option>
+              <option value="Quebec City">Québec City, QC</option>
+              <option value="Montreal">Montréal, QC</option>
+              <option value="Ottawa">Ottawa, ON</option>
+              <option value="Toronto">Toronto, ON</option>
+              <option value="Winnipeg">Winnipeg, MB</option>
+              <option value="Regina">Regina, SK</option>
+              <option value="Calgary">Calgary, AB</option>
+              <option value="Edmonton">Edmonton, AB</option>
+              <option value="Victoria">Victoria, BC</option>
+              <option value="Vancouver">Vancouver, BC</option>
+            </optgroup>
+            <optgroup label="United States">
+              <option value="Seattle">Seattle, WA</option>
+              <option value="Houston">Houston, TX</option>
+              <option value="Chicago">Chicago, IL</option>
+              <option value="Los Angeles">Los Angeles, CA</option>
+              <option value="New York">New York, NY</option>
+            </optgroup>
+            <optgroup label="Landmarks">
+              <option value="Statue of Liberty">Statue of Liberty, USA</option>
+              <option value="Eiffel Tower">Eiffel Tower, France</option>
+              <option value="CN Tower">CN Tower, Canada</option>
+            </optgroup>
+          </select>
+        </div>
+      </div>
+
+      <!-- Map Container -->
+      <div id="map" class="h-64 w-full rounded-lg mt-4 border border-gray-200"></div>
+
+      <!-- Distance Visualization -->
+      <div class="border-t border-gray-200 my-4"></div>
+      <div class="text-center text-sm text-gray-600">
+        <strong>Your Journey Progress</strong><br/>
+        <div class="relative mx-auto mt-2 h-16 w-full">
+          <svg viewBox="0 0 100 20" class="w-full h-full">
+            <path id="journey-path" d="M0,10 Q25,0 50,10 T100,10" 
+                  stroke="#E5E7EB" stroke-width="2" fill="none" />
+            <path id="journey-progress" d="M0,10 Q25,0 50,10 T100,10" 
+                  stroke="#10B981" stroke-width="3" fill="none" stroke-dasharray="0 100" />
+            <circle id="journey-marker" cx="0" cy="10" r="4" fill="#10B981" />
+          </svg>
+          <div id="journey-percent" class="text-xs text-emerald-700 font-semibold mt-1">
+            0% completed
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Team Section -->
+    <div class="mt-8 grid grid-cols-2 gap-6">
+      <!-- Left Panel: Team Search -->
+      <div class="bg-white shadow rounded-lg p-6">
+        <h2 class="text-lg font-semibold mb-4">Join a Team</h2>
+        <div class="flex gap-2">
+          <input 
+            type="text" 
+            id="team-search" 
+            placeholder="Search team name or ID" 
+            class="border border-gray-300 p-2 rounded flex-grow"
+          >
+          <button 
+            onclick="searchTeams()" 
+            class="bg-emerald-500 text-white p-2 rounded"
+          >
+            Search
+          </button>
+        </div>
+        
+        <div id="search-results" class="mt-4 space-y-2 hidden">
+          <!-- Search results will appear here -->
+        </div>
+        
+        <div id="no-teams-found" class="mt-4 text-sm text-gray-500 hidden">
+          No teams found. Try a different search term.
+        </div>
+      </div>
+      
+      <!-- Right Panel: Team Stats -->
+      <div class="bg-white shadow rounded-lg p-6">
+        <h2 class="text-lg font-semibold mb-4">Team Statistics</h2>
+        <div id="team-stats">
+          <p class="text-sm text-gray-500">Login to view team statistics</p>
+        </div>
+        
+        <!-- Only show when logged in -->
+        <div id="logged-in-stats" class="hidden">
+          <div class="flex justify-between mb-2">
+            <span>Total Distance:</span>
+            <span class="font-medium" id="team-total-distance">0 km</span>
+          </div>
+          <div class="flex justify-between mb-2">
+            <span>Members:</span>
+            <span class="font-medium" id="team-member-count">0</span>
+          </div>
+          <div class="flex justify-between">
+            <span>Current Journey:</span>
+            <span class="font-medium" id="team-current-journey">None selected</span>
+          </div>
+          
+          <div class="mt-4 pt-4 border-t">
+            <h3 class="font-medium mb-2">Top Contributors</h3>
+            <div id="top-contributors" class="space-y-2">
+              <!-- Will be populated by JavaScript -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Loading Overlay -->
+  <div id="loading-overlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+    <div class="bg-white p-6 rounded-lg">Loading...</div>
+  </div>
+
+  <!-- Notification Toast -->
+  <div id="toast" class="fixed bottom-4 right-4 bg-emerald-500 text-white px-4 py-2 rounded shadow-lg hidden"></div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  
+  <script>
+    // === Firebase Configuration ===
+    // REPLACE THIS WITH YOUR ACTUAL CONFIG FROM FIREBASE CONSOLE
+    const firebaseConfig = {
+      apiKey: "AIzaSyCFGrpAmhkB93k0p5f9wA2FrLRrMvmMVOg",
+  authDomain: "miles-together.firebaseapp.com",
+  projectId: "miles-together",
+  storageBucket: "miles-together.firebasestorage.app",
+  messagingSenderId: "655775150595",
+  appId: "1:655775150595:web:13ff34f07f72f383741436",
+  measurementId: "G-3XF45RS0GT"
+
+    };
+  
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+  
+    // === Auth Functions ===
+    let currentUser = null;
+    let isLoginMode = true;
+  
+    auth.onAuthStateChanged(user => {
+      currentUser = user;
+      if (user) {
+        // Hide login fields and show user email
+        document.getElementById('auth-email').style.display = 'none';
+        document.getElementById('auth-password').style.display = 'none';
+        document.querySelector('header button').style.display = 'none';
+        document.getElementById('auth-switch').style.display = 'none';
+        
+        // Create user display element if it doesn't exist
+        let userDisplay = document.getElementById('user-display');
+        if (!userDisplay) {
+          userDisplay = document.createElement('span');
+          userDisplay.id = 'user-display';
+          userDisplay.className = 'text-sm font-medium';
+          document.querySelector('header').appendChild(userDisplay);
+        }
+        userDisplay.textContent = user.email;
+        
+        // Show team stats
+        document.getElementById('logged-in-stats').classList.remove('hidden');
+        loadTeamStats();
+      } else {
+        // Show login fields
+        document.getElementById('auth-email').style.display = 'block';
+        document.getElementById('auth-password').style.display = 'block';
+        document.querySelector('header button').style.display = 'block';
+        document.getElementById('auth-switch').style.display = 'block';
+        
+        // Remove user display if exists
+        const userDisplay = document.getElementById('user-display');
+        if (userDisplay) userDisplay.remove();
+        
+        // Hide team stats
+        document.getElementById('logged-in-stats').classList.add('hidden');
+      }
+    });
+  
+    function handleAuth() {
+      const email = document.getElementById('auth-email').value;
+      const password = document.getElementById('auth-password').value;
+      
+      if (isLoginMode) {
+        auth.signInWithEmailAndPassword(email, password)
+          .catch(error => showToast("Login failed: " + error.message, true));
+      } else {
+        auth.createUserWithEmailAndPassword(email, password)
+          .then(() => showToast("Account created successfully!"))
+          .catch(error => showToast("Signup failed: " + error.message, true));
+      }
+    }
+  
+    function switchAuthMode() {
+      isLoginMode = !isLoginMode;
+      document.getElementById('auth-switch').textContent = 
+        isLoginMode ? "Create account" : "Login instead";
+      document.querySelector('header button').textContent = 
+        isLoginMode ? "Login" : "Create Account";
+    }
+  
+    // === Team Functions ===
+    async function searchTeams() {
+      const searchTerm = document.getElementById('team-search').value.trim();
+      if (!searchTerm) return;
+      
+      showLoading();
+      
+      try {
+        const teamsRef = db.collection('teams');
+        const nameQuery = teamsRef.where('name', '>=', searchTerm)
+                                 .where('name', '<=', searchTerm + '\uf8ff')
+                                 .limit(5);
+        const idQuery = teamsRef.where(firebase.firestore.FieldPath.documentId(), '==', searchTerm);
+        
+        const [nameResults, idResults] = await Promise.all([
+          nameQuery.get(),
+          idQuery.get()
+        ]);
+        
+        const results = [...nameResults.docs, ...idResults.docs];
+        displaySearchResults(results);
+      } catch (error) {
+        showToast("Search failed: " + error.message, true);
+      } finally {
+        hideLoading();
+      }
+    }
+  
+    function displaySearchResults(teams) {
+      const resultsContainer = document.getElementById('search-results');
+      const noResults = document.getElementById('no-teams-found');
+      
+      resultsContainer.innerHTML = '';
+      
+      if (teams.length === 0) {
+        noResults.classList.remove('hidden');
+        resultsContainer.classList.add('hidden');
+        return;
+      }
+      
+      noResults.classList.add('hidden');
+      
+      teams.forEach(team => {
+        const teamData = team.data();
+        const teamEl = document.createElement('div');
+        teamEl.className = 'p-3 border rounded flex justify-between items-center';
+        teamEl.innerHTML = `
+          <div>
+            <h3 class="font-medium">${teamData.name}</h3>
+            <p class="text-sm text-gray-500">ID: ${team.id} • ${teamData.members.length} members</p>
+          </div>
+          <button 
+            onclick="requestToJoin('${team.id}')" 
+            class="text-sm bg-blue-500 text-white px-3 py-1 rounded"
+          >
+            Request
+          </button>
+        `;
+        resultsContainer.appendChild(teamEl);
+      });
+      
+      resultsContainer.classList.remove('hidden');
+    }
+    
+    async function requestToJoin(teamId) {
+      if (!currentUser) return;
+      
+      showLoading();
+      try {
+        await db.collection('teamRequests').add({
+          teamId,
+          userId: currentUser.uid,
+          userEmail: currentUser.email,
+          status: 'pending',
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        showToast("Join request sent successfully!");
+      } catch (error) {
+        showToast("Request failed: " + error.message, true);
+      } finally {
+        hideLoading();
+      }
+    }
+  
+    async function loadTeamStats() {
+      if (!currentUser) return;
+      
+      const userDoc = await db.collection('users').doc(currentUser.uid).get();
+      const teamId = userDoc.data()?.teamId;
+      if (!teamId) return;
+      
+      db.collection('teams').doc(teamId).onSnapshot(teamDoc => {
+        const teamData = teamDoc.data();
+        if (!teamData) return;
+        
+        document.getElementById('team-total-distance').textContent = 
+          `${teamData.totalDistance?.toLocaleString() || 0} km`;
+        document.getElementById('team-member-count').textContent = 
+          teamData.members?.length || 0;
+          
+        // Update current journey display
+        const journeySelect = document.getElementById('journey-select');
+        const selectedJourney = journeySelect.options[journeySelect.selectedIndex].text;
+        document.getElementById('team-current-journey').textContent = selectedJourney;
+        
+        // Load top contributors
+        if (teamData.members) {
+          loadTopContributors(teamData.members);
+        }
+      });
+    }
+  
+    async function loadTopContributors(memberIds) {
+      const contributors = await Promise.all(
+        memberIds.map(async uid => {
+          const userDoc = await db.collection('users').doc(uid).get();
+          return {
+            email: userDoc.data()?.email || 'Anonymous',
+            distance: userDoc.data()?.personalDistance || 0
+          };
+        })
+      );
+      
+      // Sort by distance (descending)
+      contributors.sort((a, b) => b.distance - a.distance);
+      
+      const container = document.getElementById('top-contributors');
+      container.innerHTML = '';
+      
+      contributors.slice(0, 3).forEach(user => {
+        const userEl = document.createElement('div');
+        userEl.className = 'flex justify-between text-sm';
+        userEl.innerHTML = `
+          <span>${user.email}</span>
+          <span class="font-medium">${user.distance.toLocaleString()} km</span>
+        `;
+        container.appendChild(userEl);
+      });
+    }
+    
+    // === Distance Tracking Functions ===
+    // Locations Database
+    const locations = {
+      // Canadian Cities
+      "Vancouver": { lat: 49.2827, lon: -123.1207 },
+      "Victoria": { lat: 48.4284, lon: -123.3656 },
+      "Edmonton": { lat: 53.5461, lon: -113.4938 },
+      "Calgary": { lat: 51.0447, lon: -114.0719 },
+      "Regina": { lat: 50.4452, lon: -104.6189 },
+      "Winnipeg": { lat: 49.8951, lon: -97.1384 },
+      "Toronto": { lat: 43.6532, lon: -79.3832 },
+      "Ottawa": { lat: 45.4215, lon: -75.6972 },
+      "Montreal": { lat: 45.5019, lon: -73.5674 },
+      "Quebec City": { lat: 46.8139, lon: -71.2080 },
+      "Fredericton": { lat: 45.9636, lon: -66.6431 },
+      "Halifax": { lat: 44.6488, lon: -63.5752 },
+      "Charlottetown": { lat: 46.2382, lon: -63.1311 },
+      "St. John's": { lat: 47.5605, lon: -52.7126 },
+      
+      // US Cities
+      "New York": { lat: 40.7128, lon: -74.0060 },
+      "Los Angeles": { lat: 34.0522, lon: -118.2437 },
+      "Chicago": { lat: 41.8781, lon: -87.6298 },
+      "Houston": { lat: 29.7604, lon: -95.3698 },
+      "Seattle": { lat: 47.6062, lon: -122.3321 },
+      
+      // Landmarks
+      "Eiffel Tower": { lat: 48.8584, lon: 2.2945 },
+      "Statue of Liberty": { lat: 40.6892, lon: -74.0445 },
+      "CN Tower": { lat: 43.6426, lon: -79.3871 }
+    };
+
+    // Initialize variables
+    let totalDistance = 0;
+    let map;
+
+    // Initialize map
+    function initMap() {
+      map = L.map('map').setView([51.505, -0.09], 2);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+      }).addTo(map);
+      
+      // Set default route (Vancouver to St. John's)
+      updateMap("Vancouver", "St. John's");
+    }
+
+    // Update map with route between cities
+    function updateMap(start, end) {
+      // Clear existing layers except base map
+      map.eachLayer(layer => {
+        if (layer instanceof L.Marker || layer instanceof L.Polyline) {
+          map.removeLayer(layer);
+        }
+      });
+
+      const startCoords = [locations[start].lat, locations[start].lon];
+      const endCoords = [locations[end].lat, locations[end].lon];
+      
+      // Add markers and line
+      L.marker(startCoords).addTo(map)
+        .bindPopup(start)
+        .openPopup();
+      L.marker(endCoords).addTo(map)
+        .bindPopup(end);
+      L.polyline([startCoords, endCoords], {color: '#10B981'}).addTo(map);
+      
+      // Fit map to show both locations
+      map.fitBounds([startCoords, endCoords]);
+    }
+
+    // Haversine formula for distance calculation
+    function haversineDistance(from, to) {
+      const R = 6371;
+      const dLat = (to.lat - from.lat) * Math.PI / 180;
+      const dLon = (to.lon - from.lon) * Math.PI / 180;
+      const lat1 = from.lat * Math.PI / 180;
+      const lat2 = to.lat * Math.PI / 180;
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    // Update city distance when selection changes
+    function updateCityDistance() {
+      const start = document.getElementById("city-start").value;
+      const end = document.getElementById("city-end").value;
+      
+      if (start && end && locations[start] && locations[end]) {
+        totalDistance = haversineDistance(locations[start], locations[end]);
+        updateMap(start, end);
+        updateDistanceProgress();
+      }
+    }
+
+    // Update distance visualization
+    function updateDistanceVisualization(percent) {
+      const pathLength = document.getElementById("journey-path").getTotalLength();
+      const progressPath = document.getElementById("journey-progress");
+      const marker = document.getElementById("journey-marker");
+
+      progressPath.style.strokeDasharray = `${pathLength * percent} ${pathLength}`;
+      
+      const markerPoint = document.getElementById("journey-path").getPointAtLength(pathLength * percent);
+      marker.setAttribute("cx", markerPoint.x);
+      marker.setAttribute("cy", markerPoint.y);
+
+      document.getElementById("journey-percent").textContent = 
+        `${Math.round(percent * 100)}% completed`;
+    }
+
+    // Update distance progress
+    function updateDistanceProgress() {
+      const journey = document.getElementById("journey-select").value;
+      let customDistance = totalDistance;
+
+      switch (journey) {
+        case "fellowship": customDistance = 1987; break;
+        case "forestgump": customDistance = 24140.16; break;
+        case "world": customDistance = 40075; break;
+        case "moon": customDistance = 384400; break;
+        case "pct": customDistance = 4265; break;
+        case "city":
+        default: customDistance = totalDistance;
+      }
+
+      const input = parseFloat(document.getElementById("distance-input").value) || 0;
+      const unit = document.getElementById("distance-unit").value;
+      const km = unit === "mi" ? input * 1.60934 : input;
+      const percent = Math.min(km / customDistance, 1);
+
+      updateDistanceVisualization(percent);
+      document.getElementById("journey-distance-display").textContent = 
+        `Distance to Journey's End: ${customDistance.toLocaleString()} km (${Math.round(percent * 100)}%)`;
+      
+      // Add to team total if logged in
+      if (km > 0 && currentUser) {
+        addTeamDistance(km);
+      }
+    }
+    
+    async function addTeamDistance(distance) {
+      if (!currentUser?.uid) return;
+      
+      showLoading();
+      try {
+        const userDoc = await db.collection('users').doc(currentUser.uid).get();
+        const teamId = userDoc.data()?.teamId;
+        if (!teamId) return;
+        
+        await db.runTransaction(async (transaction) => {
+          const userRef = db.collection('users').doc(currentUser.uid);
+          const teamRef = db.collection('teams').doc(teamId);
+          
+          transaction.update(userRef, {
+            personalDistance: firebase.firestore.FieldValue.increment(distance)
+          });
+          
+          transaction.update(teamRef, {
+            totalDistance: firebase.firestore.FieldValue.increment(distance),
+            lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+          });
+        });
+      } catch (error) {
+        console.error("Distance update failed:", error);
+        showToast("Failed to update team distance", true);
+      } finally {
+        hideLoading();
+      }
+    }
+
+    // === UI Helpers ===
+    function showLoading() {
+      document.getElementById('loading-overlay').classList.remove('hidden');
+    }
+    
+    function hideLoading() {
+      document.getElementById('loading-overlay').classList.add('hidden');
+    }
+    
+    function showToast(message, isError = false) {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.classList.remove('hidden', 'bg-red-500', 'bg-emerald-500');
+      toast.classList.add(isError ? 'bg-red-500' : 'bg-emerald-500');
+      
+      setTimeout(() => {
+        toast.classList.add('hidden');
+      }, 3000);
+    }
+
+    // === Initialize ===
+    document.addEventListener("DOMContentLoaded", () => {
+      // Initialize map
+      initMap();
+      
+      // Set default city pair
+      document.getElementById("city-start").value = "Vancouver";
+      document.getElementById("city-end").value = "St. John's";
+      updateCityDistance();
+      
+      // Add event listeners
+      document.getElementById("distance-input").addEventListener("input", updateDistanceProgress);
+      document.getElementById("city-start").addEventListener("change", updateCityDistance);
+      document.getElementById("city-end").addEventListener("change", updateCityDistance);
+      document.getElementById("journey-select").addEventListener("change", function() {
+        const isCityToCity = this.value === "city";
+        document.getElementById("city-pair-section").style.display = isCityToCity ? "block" : "none";
+        updateDistanceProgress();
+      });
+    });
+  </script>
+</body>
+</html>
